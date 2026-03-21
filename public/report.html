@@ -522,49 +522,45 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
     });
-
-    const apiKey = "AIzaSyBygvKixIbCXN-Z40i9rE-jKuYf7CmWxxY"; 
     
-    const fetchWithRetry = async (url, options, maxRetries = 5) => {
-        let retries = 0;
-        const delays = [1000, 2000, 4000, 8000, 16000];
-        while (retries < maxRetries) {
-            try {
-                const response = await fetch(url, options);
-                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                return await response.json();
-            } catch (error) {
-                if (retries === maxRetries - 1) throw error;
-                await new Promise(resolve => setTimeout(resolve, delays[retries]));
-                retries++;
-            }
-        }
-    };
 
     const callGemini = async (systemPrompt, userPrompt, resultEl, loadingEl, btnEl, originalBtnText) => {
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
-        const payload = {
-            contents: [{ parts: [{ text: userPrompt }] }],
-            systemInstruction: { parts: [{ text: systemPrompt }] }
-        };
-        try {
-            const data = await fetchWithRetry(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-            const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (responseText) {
-                resultEl.innerHTML = responseText.replace(/```html/g, '').replace(/```/g, '').trim();
-                resultEl.classList.remove('hidden');
-            } else throw new Error("No response");
-        } catch (error) {
-            console.error("API Error:", error);
-            resultEl.innerHTML = `<div class="text-red-600 font-bold text-center">系统网络波动，请稍后再试。</div>`;
-            resultEl.classList.remove('hidden');
-        } finally {
-            btnEl.disabled = false;
-            btnEl.classList.remove('opacity-50', 'cursor-not-allowed');
-            btnEl.innerHTML = originalBtnText;
-            loadingEl.classList.add('hidden');
+    try {
+        // 【卿心核心改造】：不再直连外网裸奔，去找我们刚才建好的 api 办事处
+        const response = await fetch('/api/gemini', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            // 把指令和客户的话合并发给我们的后端办事处
+            body: JSON.stringify({ prompt: systemPrompt + "\n\n客户诉求：" + userPrompt }) 
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || `后端办事处返回错误 (${response.status})`);
         }
-    };
+
+        if (data.result) {
+            // 将结果显示在页面上
+            resultEl.innerHTML = data.result.replace(/```html/g, '').replace(/```/g, '').trim();
+            resultEl.classList.remove('hidden');
+        } else {
+            throw new Error("AI没有返回内容，请重试。");
+        }
+    } catch (error) {
+        console.error("API Error:", error);
+        // 高情商的错误提示，保留 Tailwind 居中加粗样式
+        resultEl.innerHTML = `<div class="text-red-600 font-bold text-center">系统连接提示：${error.message}</div>`;
+        resultEl.classList.remove('hidden');
+    } finally {
+        // 恢复按钮状态，保留蔡总原本的完美用户体验逻辑
+        btnEl.disabled = false;
+        btnEl.classList.remove('opacity-50', 'cursor-not-allowed');
+        btnEl.innerHTML = originalBtnText;
+        loadingEl.classList.add('hidden');
+    }
+};
+
 
     document.getElementById('ai-matchmaker-form').addEventListener('submit', (e) => {
         e.preventDefault();
